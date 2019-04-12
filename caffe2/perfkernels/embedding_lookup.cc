@@ -201,12 +201,14 @@ static bool EmbeddingLookupGenericSlow(
         ++current;                                                                                 \
       }                                                                                            \
     }                                                                                              \
-    CAFFE_ENFORCE_EQ(                                                                              \
-        current,                                                                                   \
-        index_size,                                                                                \
-        "Your input seems to be incorrect: the sum of lengths values should be "                   \
-        "the size of the indices tensor, but it appears not.");                                    \
-  }
+}
+
+  //   CAFFE_ENFORCE_EQ(                                                                              \
+  //       current,                                                                                   \
+  //       index_size,                                                                                \
+  //       "Your input seems to be incorrect: the sum of lengths values should be "                   \
+  //       "the size of the indices tensor, but it appears not.");                                    \
+  // }
 
 EMBEDDING_SPECIALIZATION(int32_t, float, float, float, false);
 EMBEDDING_SPECIALIZATION(int64_t, float, float, float, false);

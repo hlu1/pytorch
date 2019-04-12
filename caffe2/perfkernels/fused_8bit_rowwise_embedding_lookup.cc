@@ -196,12 +196,14 @@ static bool Fused8BitRowwiseEmbeddingLookupGenericSlow(
         ++current;                                                                       \
       }                                                                                  \
     }                                                                                    \
-    CAFFE_ENFORCE_EQ(                                                                    \
-        current,                                                                         \
-        index_size,                                                                      \
-        "Your input seems to be incorrect: the sum of lengths values should be "         \
-        "the size of the indices tensor, but it appears not.");                          \
-  }
+}
+
+  //   CAFFE_ENFORCE_EQ(                                                                    \
+  //       current,                                                                         \
+  //       index_size,                                                                      \
+  //       "Your input seems to be incorrect: the sum of lengths values should be "         \
+  //       "the size of the indices tensor, but it appears not.");                          \
+  // }
 
 FUSED_8BIT_ROWWISE_EMBEDDING_SPECIALIZATION(int32_t, float);
 FUSED_8BIT_ROWWISE_EMBEDDING_SPECIALIZATION(int64_t, float);
