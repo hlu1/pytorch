@@ -424,6 +424,44 @@ std::unordered_map<const Value*, std::vector<const Value*>> FindShared(
   return shared;
 }
 
+void FuseSigridTransformsListUnpack(std::shared_ptr<torch::jit::Graph>& graph) {
+  auto nodes = graph->nodes();
+  for (auto it = nodes.begin(); it != nodes.end(); ++it) {
+    Node* sigrid_node = *it;
+    auto kind = sigrid_node->kind();
+    // TODO: make it work the TorchBind version
+    if (strcmp(kind.toQualString(), "fb::sigrid_transforms") == 0) {
+      const Value* sigrid_out = sigrid_node->outputs()[0];
+      if (sigrid_out->uses().size() > 1) {
+        continue;
+      }
+
+      Node* list_unpack_node = sigrid_out->uses()[0].user;
+      if (list_unpack_node->kind() != prim::ListUnpack) {
+        continue;
+      }
+
+      auto list_unpack_outputs = list_unpack_node->outputs();
+      if (list_unpack_outputs.size() == 0) {
+        continue;
+      }
+
+      // handle outputs
+      for (Value* out : list_unpack_outputs) {
+        Value* new_out = sigrid_node->addOutput();
+        new_out->copyMetadata(out);
+        out->replaceAllUsesWith(new_out);
+      }
+
+      auto it_next = it;
+      ++it_next; // it_next points to list_unpack
+      it_next.destroyCurrent(); // remove list_unpack
+
+      sigrid_node->eraseOutput(0);
+    }
+  }
+}
+
 } // namespace
 
 void PrepareGraphForStaticModule(std::shared_ptr<torch::jit::Graph> graph) {
@@ -471,6 +509,12 @@ StaticModule::StaticModule(
     : opts_(opts),
       graph_(std::move(graph_and_schema.first)),
       schema_(std::move(graph_and_schema.second)) {
+#ifdef FBCODE_CAFFE2
+  if (opts.enable_out_variant) {
+    FuseSigridTransformsListUnpack(graph_);
+  }
+#endif
+
   std::unordered_map<Value*, IValue*> val_to_ival;
   // value -> index into nodes, index into outputs of node
   std::unordered_map<Value*, std::pair<int, int>> val_to_idx;
@@ -1105,13 +1149,7 @@ ProcessedNode::ProcessedNode(
     : node_(node), inputs_(std::move(inputs)) {
   // TODO leverage type information
   outputs_.resize(node->outputs().size());
-  if (node->kind() != prim::ListConstruct &&
-      node->kind() != prim::TupleConstruct &&
-      node->kind() != prim::ListUnpack) {
-    const Operator& op = node->getOperator();
-    TORCH_CHECK(op.hasOperation());
-    op_ = op.getOperation(node);
-  }
+
   if (enable_out_variants && canRunOutOfPlace(node)) {
     fn_ = getOutOfPlaceOperation(node);
     std::ostringstream ss;
@@ -1122,7 +1160,14 @@ ProcessedNode::ProcessedNode(
     std::ostringstream ss;
     node->print(ss, 0, nullptr, false);
     VLOG(1) << "Switch to native impl for node: " << ss.str();
-  } else {
+  } else if (
+      node->kind() != prim::ListConstruct &&
+      node->kind() != prim::TupleConstruct &&
+      node->kind() != prim::ListUnpack) {
+    const Operator& op = node->getOperator();
+    TORCH_CHECK(op.hasOperation());
+    op_ = op.getOperation(node);
+
     std::ostringstream ss;
     node->print(ss, 0, nullptr, false);
     VLOG(1) << "Fallback interpreter for node: " << ss.str();
